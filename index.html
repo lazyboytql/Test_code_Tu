@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control DeltaX2</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/show-hint.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="title-bar">
+            <div class="title">DeltaX2 Robot Control</div>
+            <div class="upload-exit">
+                <form id="upload-form" method="POST" enctype="multipart/form-data">
+                    <input type="file" name="file">
+                    <button type="submit">Upload Script</button>
+                </form>
+                <button class="exit-btn" onclick="window.location.href='/'">Exit</button>
+            </div>
+        </div>
+        <div class="main-content">
+            <div class="code-wrapper">
+                <div class="form-wrapper">
+                    <div id="notification" class="notification"></div>
+                    <div id="user_name">
+                        <p>Chào, {{ user }}!, Code của <span id="execute-name">{{ ExecuteName }}</span> đang được thực thi, nếu không phải bạn vui lòng đợi!</p>
+                    </div>
+                    <form id="python-form">
+                        <button class="submit-btn" type="submit">Run</button>
+                        <textarea class="code-editor" id="python-input" name="python_code" placeholder="Enter Python code here..."></textarea>
+                    </form>
+                </div>
+            </div>
+            <div class="video-container">
+                <iframe class="iframe1" src="http://117.3.0.23:8033/?action=stream" allowfullscreen></iframe>
+                <iframe class="iframe2" src="http://117.3.0.23:8032/?action=stream" allowfullscreen></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/show-hint.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/hint/anyword-hint.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // Khai báo biến editor
+        let editor;
+
+        // Khởi tạo CodeMirror sau khi DOM đã sẵn sàng
+        $(document).ready(function() {
+            const textarea = document.getElementById('python-input');
+
+            // Khởi tạo CodeMirror
+            editor = CodeMirror.fromTextArea(textarea, {
+                mode: 'python',
+                lineNumbers: true,
+                theme: 'dracula',
+                extraKeys: {
+                    "Ctrl-Space": "autocomplete"
+                },
+                viewportMargin: Infinity
+            });
+
+            const updateEditorSize = () => {
+                const container = document.querySelector('.code-wrapper');
+                if (container) {
+                    const width = container.clientWidth;
+                    const height = container.clientHeight;
+                    editor.setSize(width, height);
+                }
+            };
+
+            // Cập nhật kích thước CodeMirror khi cửa sổ thay đổi kích thước
+            window.addEventListener('resize', updateEditorSize);
+
+            // Cập nhật kích thước khi DOM đã sẵn sàng
+            updateEditorSize();
+
+
+
+            $("#python-form").on("submit", function(event) {
+                event.preventDefault();
+                var python_code = editor.getValue();
+                $.ajax({
+                    url: "/remote",
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({
+                        python_code: python_code
+                    }),
+                    success: function(response) {
+                        $("#notification").text("Code đã được nạp thành công!");
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        $("#notification").text("Đã xảy ra lỗi khi nạp code.");
+                    }
+                });
+            });
+
+            $("#upload-form").on("submit", function(event) {
+                event.preventDefault();
+                var formData = new FormData(this);
+                $.ajax({
+                    url: "/upload",
+                    method: "POST",
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $("#notification").text("Upload script thành công!");
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        $("#notification").text("Đã xảy ra lỗi khi upload script.");
+                    }
+                });
+            });
+
+            function checkExecuteName() {
+                $.ajax({
+                    url: "/get_execute_name",
+                    method: "GET",
+                    success: function(response) {
+                        var executeNameElement = document.getElementById('execute-name');
+                        if (executeNameElement) {
+                            executeNameElement.textContent = response.ExecuteName;
+                        }
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error("Đã xảy ra lỗi khi lấy ExecuteName.");
+                    }
+                });
+            }
+            // Kiểm tra ExecuteName mỗi 5 giây
+            setInterval(checkExecuteName, 1000);
+        });
+
+        fetch('/static/keywords.json')
+            .then(response => response.json())
+            .then(data => {
+                const customKeywords = Object.values(data.DeltaX2Lib.classes).flat();
+
+                function customHint(editor, options) {
+                    const cursor = editor.getCursor();
+                    const token = editor.getTokenAt(cursor);
+                    const start = token.start;
+                    const end = cursor.ch;
+                    const currentWord = token.string;
+
+                    const list = customKeywords.filter(function(item) {
+                        return item.startsWith(currentWord);
+                    });
+
+                    return {
+                        list: list,
+                        from: CodeMirror.Pos(cursor.line, start),
+                        to: CodeMirror.Pos(cursor.line, end)
+                    };
+                }
+
+                function autoComplete(cm) {
+                    CodeMirror.showHint(cm, customHint, {
+                        completeSingle: false
+                    });
+                }
+
+                editor.on('inputRead', function(cm, event) {
+                    if (!cm.state.completionActive) {
+                        autoComplete(cm);
+                    }
+                });
+            })
+            .catch(error => console.error('Error loading keywords:', error));
+    </script>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+
+</body>
+
+</html>
